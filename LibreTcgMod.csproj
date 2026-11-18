@@ -4,7 +4,9 @@
     <TargetFramework>net471</TargetFramework>
     <AssemblyName>LibreTcgMod</AssemblyName>
     <RootNamespace>LibreTcgMod</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>1.1.0</Version>
+    <!-- Shown by the launcher in the mod's details (AssemblyDescription). -->
+    <Description>The base for other mods: lets server plugins and client mods talk to each other, and tells mods about the connection, chat rooms and matches. Includes a debug panel (F9) for mod authors.</Description>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <!-- Folder of the PTCGO client with BepInEx installed; override with -p:GameDir=... -->
@@ -25,6 +27,12 @@
     <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)/UnityEngine.IMGUIModule.dll" Private="false" />
     <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)/UnityEngine.TextRenderingModule.dll" Private="false" />
     <Reference Include="core" HintPath="$(ManagedDir)/core.dll" Private="false" />
+    <Reference Include="pie-src" HintPath="$(ManagedDir)/pie-src.dll" Private="false" />
+    <Reference Include="FreeTypeInterop" HintPath="$(ManagedDir)/FreeTypeInterop.dll" Private="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Shown by the launcher next to the mod's name (AssemblyMetadata "Logo"). -->
+    <AssemblyMetadata Include="Logo" Value="https://raw.githubusercontent.com/LibreSoldier/libre-tcg-mod/main/logo.png" />
+  </ItemGroup>
 </Project>

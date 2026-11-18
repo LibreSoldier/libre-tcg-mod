@@ -1,4 +1,4 @@
-// LibreTCG Mod - BepInEx plugin for the PTCGO 2.95 client
+// Libre's Support Mod - BepInEx plugin for the PTCGO 2.95 client
 // Copyright (C) 2026 LibreSoldier
 //
 // This program is free software: you can redistribute it and/or modify it under
@@ -10,8 +10,10 @@
 
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using BepInEx;
 using BepInEx.Bootstrap;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using dwd.core.session;
 using HarmonyLib;
@@ -22,45 +24,106 @@ namespace LibreTcgMod
     [BepInPlugin(Guid, Name, Version)]
     public class Plugin : BaseUnityPlugin
     {
-        public const string Guid = "libretcg.mod";
-        public const string Name = "LibreTCG Mod";
-        public const string Version = "0.2.0";
+        public const string Guid = "libre.support";
+        public const string Name = "Libre's Support Mod";
+        public const string Version = "1.1.0";
 
         internal static ManualLogSource Log;
 
         private GUIStyle labelStyle;
+        private ConfigEntry<bool> debugPanelEnabled;
+        private ConfigEntry<KeyboardShortcut> debugPanelKey;
+        private readonly DebugPanel debugPanel = new DebugPanel();
 
         private void Awake()
         {
             Log = Logger;
-            Log.LogInfo($"LibreTCG mod loaded (v{Version})");
+            Log.LogInfo($"{Name} loaded (v{Version}, API {LibreSupport.ApiVersion})");
+            debugPanelEnabled = Config.Bind("Debug", "Panel", false,
+                "Lets PanelKey open the debug panel (connection, mods, channels, recent LibreModMessages and events).");
+            debugPanelKey = Config.Bind("Debug", "PanelKey", new KeyboardShortcut(KeyCode.F9),
+                "Opens and closes the debug panel when Panel is true.");
             new Harmony(Guid).PatchAll(typeof(Plugin).Assembly);
+            LibreSupport.Initialize();
+            StartCoroutine(WatchOptionsMenu());
         }
 
-        // The built-in IMGUI Arial does not render in this build, so use a font
-        // the game already loaded (FunctionPro), or fall back to an OS font.
-        private static Font PickFont()
+        // Messages from the server arrive on the network thread; handlers run here.
+        private void Update()
         {
-            Font fallback = null;
-            foreach (var f in Resources.FindObjectsOfTypeAll<Font>())
-            {
-                if (f.name == "FunctionPro-Demi")
-                    return f;
-                if (fallback == null && f.name != "Arial")
-                    fallback = f;
-            }
-            return fallback ?? Font.CreateDynamicFontFromOSFont(new[] { "Arial", "Tahoma", "Liberation Sans", "DejaVu Sans" }, 14);
+            LibreSupport.Pump();
+            if (debugPanelEnabled.Value && debugPanelKey.Value.IsDown())
+                debugPanel.Toggle();
         }
 
-        // Small marker so the player can see the mod is active.
+        // The options menu shows "Client Version: ..." (VersionLabel, pie-src). With the mod
+        // loaded the client is modified, so say so there; the server marks its own line.
+        // VersionLabel.Start must NOT be Harmony-patched: its obfuscated fields share names
+        // and the rewritten method read the wrong field and crashed the game. So the text
+        // is changed from outside, after the game wrote it.
+        private const string ModdedSuffix = " (modded)";
+
+        private static readonly AccessTools.FieldRef<VersionLabel, PieFTPTextArea> VersionText =
+            AccessTools.FieldRefAccess<VersionLabel, PieFTPTextArea>("versionLabel");
+
+        // VersionLabel only exists while the options menu is open, so it also tells
+        // when to show the on-screen label.
+        private static bool optionsOpen;
+
+        private IEnumerator WatchOptionsMenu()
+        {
+            var wait = new WaitForSecondsRealtime(0.25f);
+            bool canMark = true;
+            while (true)
+            {
+                yield return wait;
+                VersionLabel[] labels;
+                try
+                {
+                    labels = FindObjectsOfType<VersionLabel>();
+                }
+                catch (System.Exception e)
+                {
+                    Log.LogWarning($"Could not look for the options menu: {e.Message}");
+                    optionsOpen = false;
+                    yield break;
+                }
+                optionsOpen = labels.Length > 0;
+                if (!canMark)
+                    continue;
+                try
+                {
+                    foreach (var label in labels)
+                    {
+                        if (label.type != VersionLabel.Type.Client)
+                            continue;
+                        var area = VersionText(label);
+                        string text = area?.get_text();
+                        if (!string.IsNullOrEmpty(text) && !text.EndsWith(ModdedSuffix))
+                            area.set_text(text + ModdedSuffix);
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Log.LogWarning($"Could not mark the client version as modded: {e.Message}");
+                    canMark = false;
+                }
+            }
+        }
+
         private void OnGUI()
         {
-            if (labelStyle == null)
+            // Small marker in the options menu, so the player can see the mod is active.
+            if (optionsOpen)
             {
-                labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 14, font = PickFont() };
-                labelStyle.normal.textColor = new Color(1f, 1f, 1f, 0.7f);
+                if (labelStyle == null)
+                {
+                    labelStyle = LibreSupport.NewLabelStyle(14);
+                    labelStyle.normal.textColor = new Color(1f, 1f, 1f, 0.7f);
+                }
+                GUI.Label(new Rect(6, 2, 300, 20), $"{Name} {Version}", labelStyle);
             }
-            GUI.Label(new Rect(6, 2, 300, 20), $"LibreTCG mod {Version}", labelStyle);
+            debugPanel.OnGUI();
         }
 
         // GUID -> version of every loaded BepInEx plugin, reported to the server at login.
@@ -98,7 +161,12 @@ namespace LibreTcgMod
 
             var mods = Plugin.LoadedMods();
             body["libreMods"] = mods;
-            Plugin.Log.LogInfo($"Attached libreMods to {name}: {string.Join(", ", Describe(mods))}");
+            // Since 1.1: the API version and the channels the mods listen on, so server
+            // plugins know which messages this client understands.
+            body["libreApi"] = LibreSupport.ApiVersion;
+            body["libreChannels"] = LibreSupport.Channels.ToArray();
+            Plugin.Log.LogInfo($"Attached libreMods to {name}: {string.Join(", ", Describe(mods))}; " +
+                               $"{LibreSupport.Channels.Count} mod channel(s)");
         }
 
         private static bool IsLoginMessage(string name)
