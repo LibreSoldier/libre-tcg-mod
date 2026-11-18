@@ -22,6 +22,8 @@ namespace LibreTcgMod
 
         internal static IEnumerable<string> Lines => lines;
 
+        internal static int Version;   // bumped on every new line, so the panel can scroll to it
+
         internal static void Add(string direction, string channel, object data)
         {
             // The game's JSON writer escapes every non-ASCII character (\u00E1); show them as text.
@@ -35,6 +37,7 @@ namespace LibreTcgMod
         internal static void Add(string kind, string text)
         {
             lines.AddFirst($"{DateTime.Now:HH:mm:ss} {kind,-5} {text}");
+            Version++;
             if (lines.Count > Max)
                 lines.RemoveLast();
         }
@@ -54,6 +57,7 @@ namespace LibreTcgMod
         private bool visible;
         private Rect window = new Rect(40, 40, 620, 520);
         private Vector2 scroll;
+        private int seenVersion;
         private GUIStyle windowStyle, labelStyle, buttonStyle, toggleStyle;
 
         internal void Toggle() => visible = !visible;
@@ -91,6 +95,12 @@ namespace LibreTcgMod
             if (GUILayout.Button("Close", buttonStyle, GUILayout.Width(80)))
                 visible = false;
             GUILayout.EndHorizontal();
+            // Newest lines are on top: jump back to them whenever one arrives.
+            if (seenVersion != DebugTrace.Version)
+            {
+                seenVersion = DebugTrace.Version;
+                scroll = Vector2.zero;
+            }
             scroll = GUILayout.BeginScrollView(scroll);
             foreach (var line in DebugTrace.Lines)
                 Label(line);

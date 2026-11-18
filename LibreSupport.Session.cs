@@ -89,7 +89,7 @@ namespace LibreTcgMod
         /// <summary>A match was found and is starting.</summary>
         public static event Action MatchStarted;
 
-        /// <summary>The match ended (win, loss or concede).</summary>
+        /// <summary>The match ended (win, loss, concede or disconnect): raised when the game leaves the match screens.</summary>
         public static event Action MatchEnded;
 
         /// <summary>
@@ -147,7 +147,38 @@ namespace LibreTcgMod
                 Scene = scene.name;
                 DebugTrace.Add("event", "SceneChanged " + scene.name);
                 Raise(SceneChanged, scene.name);
+                // GameCompletedMessage arrives inside the match's own message sequence, which
+                // never reaches the session dispatch, so leaving the match scenes (after a win,
+                // loss, concede or disconnect) is what ends the match here. Entering them starts
+                // one when MatchFound was not seen (e.g. a match started some other way).
+                if (MatchScenes.Contains(scene.name))
+                    StartMatch();
+                else
+                    EndMatch();
             };
+        }
+
+        // VersusScreen (the intro), then Playmat (the table).
+        private static readonly HashSet<string> MatchScenes = new HashSet<string> { "VersusScreen", "Playmat" };
+
+        private static void StartMatch()
+        {
+            if (InMatch)
+                return;
+            InMatch = true;
+            DebugTrace.Add("event", "MatchStarted");
+            Plugin.Log.LogInfo("Match started");
+            Raise(MatchStarted);
+        }
+
+        private static void EndMatch()
+        {
+            if (!InMatch)
+                return;
+            InMatch = false;
+            DebugTrace.Add("event", "MatchEnded");
+            Plugin.Log.LogInfo("Match ended");
+            Raise(MatchEnded);
         }
 
         // Main thread: SessionProvider.dispatch runs in its Update.
@@ -191,20 +222,10 @@ namespace LibreTcgMod
                     }
                     break;
                 case MatchFound _:
-                    if (!InMatch)
-                    {
-                        InMatch = true;
-                        DebugTrace.Add("event", "MatchStarted");
-                        Raise(MatchStarted);
-                    }
+                    StartMatch();
                     break;
                 case GameCompletedMessage _:
-                    if (InMatch)
-                    {
-                        InMatch = false;
-                        DebugTrace.Add("event", "MatchEnded");
-                        Raise(MatchEnded);
-                    }
+                    EndMatch();
                     break;
             }
             Raise(GameMessage, (object)message);

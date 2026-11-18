@@ -97,7 +97,7 @@ All events run on Unity's main thread. An exception in one handler is logged and
 | `Disconnected` | The connection closed. |
 | `SceneChanged(string)` | One of the game's big screens finished loading. |
 | `RoomJoined(string)` / `RoomLeft(string)` | The player joined or left a chat room, e.g. `Lobby_Spirit_1`. |
-| `MatchStarted` / `MatchEnded` | A match was found / ended. |
+| `MatchStarted` / `MatchEnded` | A match was found / ended (win, loss, concede or disconnect: the game left the match screens). |
 | `GameMessage(object)` | Every event the game's network session dispatches (advanced). |
 
 State: `Connected`, `IsLoggedIn`, `Server`, `Rooms`, `InMatch`, `Scene`.
